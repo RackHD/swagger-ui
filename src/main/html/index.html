@@ -32,94 +32,262 @@
 
   <script type="text/javascript">
     $(function () {
-      var url = window.location.search.match(/url=([^&]+)/);
-      if (url && url.length > 1) {
-        url = decodeURIComponent(url[1]);
-      } else {
-        url = "http://petstore.swagger.io/v2/swagger.json";
-      }
-
-      // Pre load translate...
-      if(window.SwaggerTranslator) {
-        window.SwaggerTranslator.translate();
-      }
-      window.swaggerUi = new SwaggerUi({
-        url: url,
-        dom_id: "swagger-ui-container",
-        supportedSubmitMethods: ['get', 'post', 'put', 'delete', 'patch'],
-        onComplete: function(swaggerApi, swaggerUi){
-          if(typeof initOAuth == "function") {
-            initOAuth({
-              clientId: "your-client-id",
-              clientSecret: "your-client-secret-if-required",
-              realm: "your-realms",
-              appName: "your-app-name",
-              scopeSeparator: ",",
-              additionalQueryStringParams: {}
-            });
-          }
-
-          if(window.SwaggerTranslator) {
-            window.SwaggerTranslator.translate();
-          }
-
-          $('pre code').each(function(i, e) {
-            hljs.highlightBlock(e)
-          });
-
-          addApiKeyAuthorization();
-        },
-        onFailure: function(data) {
-          log("Unable to Load SwaggerUI");
-        },
-        docExpansion: "none",
-        jsonEditor: false,
-        apisSorter: "alpha",
-        defaultModelRendering: 'schema',
-        showRequestHeaders: false
-      });
-
-      function addApiKeyAuthorization(){
-        var key = encodeURIComponent($('#input_apiKey')[0].value);
-        if(key && key.trim() != "") {
-            var apiKeyAuth = new SwaggerClient.ApiKeyAuthorization("api_key", key, "query");
-            window.swaggerUi.api.clientAuthorizations.add("api_key", apiKeyAuth);
-            log("added key " + key);
-        }
-      }
-
-      $('#input_apiKey').change(addApiKeyAuthorization);
-
-      // if you have an apiKey you would like to pre-populate on the page for demonstration purposes...
-      /*
-        var apiKey = "myApiKeyXXXX123456789";
-        $('#input_apiKey').val(apiKey);
-      */
-
-      window.swaggerUi.load();
-
       function log() {
         if ('console' in window) {
           console.log.apply(console, arguments);
         }
       }
-  });
+
+      $('#button_login, #button_auth').click(function (event) {
+        event.preventDefault();
+        loginToMonorail().always(function(token) {
+          if(window.monorailClient)  {
+            window.monorailClient.setAuthToken(token);
+          }
+        });
+
+        loginToRedfish().always(function(token) {
+          if(window.redfishClient)  {
+            window.redfishClient.setAuthToken(token);
+          }
+        });
+      });
+
+      function loginToMonorail() {
+        log('Logging into monorail');
+        return $.ajax({
+          type: 'POST',
+          url: '/login',
+          headers: {
+            'Accept': 'application/json; charset=UTF-8',
+            'Content-Type': 'application/json; charset=UTF-8'
+          },
+          data: JSON.stringify({
+            username: $('#input_email')[0].value,
+            password: $('#input_pass')[0].value
+          }),
+          processData: false
+        }).then(function( msg ) {
+          log('Monorail Login finished.');
+          if (typeof msg === 'string') {
+            try { msg = JSON.parse(msg); } catch (err) {}
+          }
+          return msg.token;
+        }).fail(function() {
+          return '';
+        });
+      }
+
+      function loginToRedfish() {
+        log('Logging into redfish');
+        var basicHash = btoa($('#input_email')[0].value + ':' + $('#input_pass')[0].value);
+        return $.ajax({ type: 'POST',
+                        url: '/redfish/v1/SessionService/Sessions',
+                        headers: {
+                          'Accept': 'application/json; charset=UTF-8',
+                          'Content-Type': 'application/json; charset=UTF-8',
+                          'Authorization': 'Basic ' + basicHash
+                        },
+                        data: JSON.stringify({
+                          UserName: $('#input_email')[0].value,
+                          Password: $('#input_pass')[0].value
+                        }),
+                        processData: false
+        }).then(function(msg, status, request) {
+          log('Redfish login finished');
+          if(request.getResponseHeader('X-Auth-Token')) {
+            return request.getResponseHeader('X-Auth-Token');
+          }
+        }).fail(function() {
+          return '';
+        });
+      }
+
+      var host = location.hostname,
+          port = location.port,
+          protocol = location.protocol,
+          query = window.location.search.slice(1).split('=');
+
+      for (var i = 0; i < query.length; i += 2) {
+        if (query[i] === 'host') host = query[i + 1];
+        if (query[i] === 'port') port = query[i + 1];
+        if (query[i] === 'protocol') protocol = query[i + 1];
+      }
+
+      var full = protocol + '//' + host + (port ? ':' + port : '');
+
+      loginToMonorail().always(function(token) {
+        window.monorailClient = monorailClient(full + '/api/2.0/swagger' + (token ? '?auth_token=' + token : ''),
+          'swagger-ui-container0');
+        window.monorailClient.ui.load();
+        window.monorailClient.setAuthToken(token);
+      });
+
+      loginToRedfish().always(function(token) {
+        window.redfishClient = redfishClient(full + '/redfish/v1/swagger', 'swagger-ui-container1');
+        window.redfishClient.ui.load();
+        window.redfishClient.setAuthToken(token);
+      });
+
+      function monorailClient(url, id) {
+        function MonorailClient() {
+          var self = this;
+          this.url = url;
+          this.id = id;
+          this.type = 'monorail';
+          this.ui = new SwaggerUi({
+            url: url,
+            dom_id: id,
+            supportedSubmitMethods: ['get', 'post', 'put', 'delete', 'patch'],
+            onComplete: function(swaggerApi, swaggerUi) {
+              $('pre code').each(function(i, e) {
+                hljs.highlightBlock(e)
+              });
+              swaggerUi.api.clientAuthorizations.remove('basicHeaderAuth');
+              $('.footer').hide();
+              $('.info').hide();
+            },
+            onFailure: function(data) {
+              log("Unable to Load Monorail SwaggerUI");
+            },
+            docExpansion: "none",
+            defaultModelRendering: 'schema',
+            apisSorter : 'alpha',
+            orderByTag : true,
+            validatorUrl : null,
+            jsonEditor: false
+          });
+        }
+        MonorailClient.prototype.setAuthToken = function(token) {
+          if(typeof token === 'string' )  {
+            this.token = token;
+            var apikey = new SwaggerClient.ApiKeyAuthorization('Authorization', 'JWT ' + token, 'header');
+            this.ui.api.clientAuthorizations.add('Authentication-Token', apikey);
+            $('#monorail_key').val(token);
+          } else {
+            $('#monorail_key').val('invalid');
+          }
+          $('#monorail_key').css({'background-color': 'yellow'});
+          setTimeout(function () {
+            var color = $('#monorail_key').val() === 'invalid' ? 'red' : 'white';
+            $('#monorail_key').css({'background-color': color});
+          }, 750);
+        };
+        return new MonorailClient(url, id);
+      }
+
+      function redfishClient(url, id) {
+        var basicHash = btoa($('#input_email')[0].value + ':' + $('#input_pass')[0].value);
+        function RedfishClient() {
+          var self = this;
+          this.url = url;
+          this.id = id;
+          this.type = 'redfish';
+          this.ui = new SwaggerUi({
+            url: url,
+            dom_id: id,
+            supportedSubmitMethods: ['get', 'post', 'put', 'delete', 'patch'],
+            onComplete: function(swaggerApi, swaggerUi) {
+              $('pre code').each(function(i, e) {
+                hljs.highlightBlock(e)
+              });
+              swaggerUi.api.clientAuthorizations.remove('basicHeaderAuth');
+              $('.footer').hide();
+              $('.info').hide();
+            },
+            onFailure: function(data) {
+              log("Unable to Load SwaggerUI");
+            },
+            docExpansion: "none",
+            defaultModelRendering: 'schema',
+            apisSorter : 'alpha',
+            orderByTag : true,
+            validatorUrl : null,
+            jsonEditor: false,
+            authorizations: {
+              basicHeaderAuth: new SwaggerClient.ApiKeyAuthorization('Authorization', 'Basic ' + basicHash, 'header')
+            }
+          });
+        }
+        RedfishClient.prototype.setAuthToken = function(token) {
+          if(typeof token === 'string' )  {
+            this.token = token;
+            var apikey = new SwaggerClient.ApiKeyAuthorization('X-Auth-Token', token, 'header');
+            this.ui.api.clientAuthorizations.add('Authentication-Token', apikey);
+            $('#redfish_key').val(token);
+          } else {
+            $('#redfish_key').val('invalid');
+          }
+          $('#redfish_key').css({'background-color': 'yellow'});
+          setTimeout(function () {
+            var color = $('#redfish_key').val() === 'invalid' ? 'red' : 'white';
+            $('#redfish_key').css({'background-color': color});
+          }, 750);
+        };
+        return new RedfishClient(url, id);
+      }
+    });
   </script>
 </head>
 
 <body class="swagger-section">
 <div id='header'>
   <div class="swagger-ui-wrap">
-    <a id="logo" href="http://swagger.io">swagger</a>
-    <form id='api_selector'>
-      <div class='input'><input placeholder="http://example.com/api" id="input_baseUrl" name="baseUrl" type="text"/></div>
-      <div class='input'><input placeholder="api_key" id="input_apiKey" name="apiKey" type="text"/></div>
-      <div class='input'><a id="explore" href="#" data-sw-translate>Explore</a></div>
-    </form>
+    <a id="logo" href="http://github.com/rackhd">RackHD</a>
   </div>
 </div>
 
+<div id="auth" style="background-color: #bbb; color: #666; font-family: 'Droid Sans', sans-serif; padding: 10px;">
+  <table style="margin: 0 auto">
+    <tbody>
+      <tr>
+        <td style="padding: 0 20px 0 0;">
+          <label for="monorail_key" style="font-weight: bold;">RackHD API Key:</label>
+        </td>
+        <td style="padding: 0 50px 0 0;">
+          <div class="input">
+            <input placeholder="rackhd_api_key" type="text" value="" id="monorail_key" tabindex="2" style="transition: background-color 500ms ease-out; background-color: white;">
+          </div>
+        </td>
+        <td rowspan="2" style="padding: 0 100px 0 10px; vertical-align: middle;">
+          <button type="submit" id="button_auth" style="padding: 5px;">Update Keys</button>
+        </td>
+        <td style="padding: 0 20px 0 0;">
+          <label for="input_login" style="font-weight: bold;">Username:</label>
+        </td>
+        <td style="padding: 0 50px 0 0;">
+          <div class="input">
+            <input placeholder="guest" type="text" name="email" value="" id="input_email" tabindex="1">
+          </div>
+        </td>
+        <td rowspan="2" style="padding: 0 0 0 10px; vertical-align: middle;">
+          <button type="submit" id="button_login" style="padding: 5px;">Login</button>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding: 10px 20px 0 0;">
+          <label for="redfish_key" style="font-weight: bold;">Redfish API Key:</label>
+        </td>
+        <td style="padding: 10px 50px 0 0;">
+          <div class="input">
+            <input placeholder="redfish_api_key" type="text" value="" id="redfish_key" tabindex="2" style="transition: background-color 500ms ease-out; background-color: white;">
+          </div>
+        </td>
+        <td style="padding: 10px 20px 0 0;">
+          <label for="input_login" style="font-weight: bold;">Password:</label>
+        </td>
+        <td style="padding: 10px 50px 0 0;">
+          <div class="input">
+            <input placeholder="user_pass" type="password" name="pass" value="" id="input_pass" tabindex="1">
+          </div>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
 <div id="message-bar" class="swagger-ui-wrap" data-sw-translate>&nbsp;</div>
-<div id="swagger-ui-container" class="swagger-ui-wrap"></div>
+<div id="swagger-ui-container0" class="swagger-ui-wrap"></div>
+<div id="swagger-ui-container1" class="swagger-ui-wrap"></div>
 </body>
 </html>

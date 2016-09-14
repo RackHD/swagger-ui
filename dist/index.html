@@ -38,21 +38,21 @@
         }
       }
 
-      $('#button_login').click(function (event) {
+      $('#button_login, #button_auth').click(function (event) {
         event.preventDefault();
         loginToMonorail().always(function(token) {
           if(window.monorailClient)  {
             window.monorailClient.setAuthToken(token);
           }
         });
-        
+
         loginToRedfish().always(function(token) {
           if(window.redfishClient)  {
             window.redfishClient.setAuthToken(token);
           }
         });
       });
-      
+
       function loginToMonorail() {
         log('Logging into monorail');
         return $.ajax({
@@ -77,13 +77,13 @@
           return '';
         });
       }
-      
+
       function loginToRedfish() {
         log('Logging into redfish');
         var basicHash = btoa($('#input_email')[0].value + ':' + $('#input_pass')[0].value);
         return $.ajax({ type: 'POST',
                         url: '/redfish/v1/SessionService/Sessions',
-                        headers: { 
+                        headers: {
                           'Accept': 'application/json; charset=UTF-8',
                           'Content-Type': 'application/json; charset=UTF-8',
                           'Authorization': 'Basic ' + basicHash
@@ -103,15 +103,26 @@
         });
       }
 
-      var full = location.protocol + '//' +
-                  location.hostname + (location.port ? ':' + location.port : '');
+      var host = location.hostname,
+          port = location.port,
+          protocol = location.protocol,
+          query = window.location.search.slice(1).split('=');
+
+      for (var i = 0; i < query.length; i += 2) {
+        if (query[i] === 'host') host = query[i + 1];
+        if (query[i] === 'port') port = query[i + 1];
+        if (query[i] === 'protocol') protocol = query[i + 1];
+      }
+
+      var full = protocol + '//' + host + (port ? ':' + port : '');
+
       loginToMonorail().always(function(token) {
         window.monorailClient = monorailClient(full + '/api/2.0/swagger' + (token ? '?auth_token=' + token : ''),
           'swagger-ui-container0');
         window.monorailClient.ui.load();
         window.monorailClient.setAuthToken(token);
       });
-      
+
       loginToRedfish().always(function(token) {
         window.redfishClient = redfishClient(full + '/redfish/v1/swagger', 'swagger-ui-container1');
         window.redfishClient.ui.load();
@@ -164,7 +175,7 @@
         };
         return new MonorailClient(url, id);
       }
-      
+
       function redfishClient(url, id) {
         var basicHash = btoa($('#input_email')[0].value + ':' + $('#input_pass')[0].value);
         function RedfishClient() {
@@ -217,47 +228,65 @@
       }
     });
   </script>
-  </head>
+</head>
 
 <body class="swagger-section">
 <div id='header'>
-  <div class="swagger-ui-wrap" style="height: 65px;">
-    <table style="float: right;">
-      <tbody>
-        <tr style="border: none;">
-          <td style="padding: 0 35px 0 0; border-bottom: none; vertical-align: middle;">
-            <label for="monorail_key" style="color: white; font-weight: bold;">Monorail API Auth Key:</label>
-            <input type="text" value="" id="monorail_key" tabindex="2" style="transition: background-color 500ms ease-out; background-color: white;">
-        </td>
-          <td style="border-bottom: none;">
-            <label for="input_login" style="color: white; font-weight: bold;">Username:</label>
-          </td>
-          <td style="border-bottom: none;">
-            <input type="text" name="email" value="admin" id="input_email" tabindex="1">
-        </td>
-          <td rowspan="2" style="padding: 0 0 0 10px; border-bottom: none; vertical-align: middle;">
-            <button type="submit" id="button_login" style="padding: 5px;">Update Login</button>
-          </td>
-        </tr>
-        <tr style="border: none;">
-          <td style="padding: 0 35px 0 0; border-bottom: none; vertical-align: middle;">
-            <label for="redfish_key" style="color: white; font-weight: bold;">Redfish API Auth Key:</label>
-            <input type="text" value="" id="redfish_key" tabindex="2" style="transition: background-color 500ms ease-out; background-color: white;">
-          </td>
-          <td style="border-bottom: none;">
-            <label for="input_login" style="color: white; font-weight: bold;">Password:</label>
-          </td>
-          <td style="border-bottom: none;">
-            <input type="text" name="pass" value="admin123" id="input_pass" tabindex="1">
-        </td>
-        </tr>
-      </tbody>
-    </table>
-    <a id="logo" href="http://swagger.io">RackHD</a>
+  <div class="swagger-ui-wrap">
+    <a id="logo" href="http://github.com/rackhd">RackHD</a>
   </div>
 </div>
 
-<div id="message-bar" class="swagger-ui-wrap">&nbsp;</div>
+<div id="auth" style="background-color: #bbb; color: #666; font-family: 'Droid Sans', sans-serif; padding: 10px;">
+  <table style="margin: 0 auto">
+    <tbody>
+      <tr>
+        <td style="padding: 0 20px 0 0;">
+          <label for="monorail_key" style="font-weight: bold;">RackHD API Key:</label>
+        </td>
+        <td style="padding: 0 50px 0 0;">
+          <div class="input">
+            <input placeholder="rackhd_api_key" type="text" value="" id="monorail_key" tabindex="2" style="transition: background-color 500ms ease-out; background-color: white;">
+          </div>
+        </td>
+        <td rowspan="2" style="padding: 0 100px 0 10px; vertical-align: middle;">
+          <button type="submit" id="button_auth" style="padding: 5px;">Update Keys</button>
+        </td>
+        <td style="padding: 0 20px 0 0;">
+          <label for="input_login" style="font-weight: bold;">Username:</label>
+        </td>
+        <td style="padding: 0 50px 0 0;">
+          <div class="input">
+            <input placeholder="guest" type="text" name="email" value="" id="input_email" tabindex="1">
+          </div>
+        </td>
+        <td rowspan="2" style="padding: 0 0 0 10px; vertical-align: middle;">
+          <button type="submit" id="button_login" style="padding: 5px;">Login</button>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding: 10px 20px 0 0;">
+          <label for="redfish_key" style="font-weight: bold;">Redfish API Key:</label>
+        </td>
+        <td style="padding: 10px 50px 0 0;">
+          <div class="input">
+            <input placeholder="redfish_api_key" type="text" value="" id="redfish_key" tabindex="2" style="transition: background-color 500ms ease-out; background-color: white;">
+          </div>
+        </td>
+        <td style="padding: 10px 20px 0 0;">
+          <label for="input_login" style="font-weight: bold;">Password:</label>
+        </td>
+        <td style="padding: 10px 50px 0 0;">
+          <div class="input">
+            <input placeholder="user_pass" type="password" name="pass" value="" id="input_pass" tabindex="1">
+          </div>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div id="message-bar" class="swagger-ui-wrap" data-sw-translate>&nbsp;</div>
 <div id="swagger-ui-container0" class="swagger-ui-wrap"></div>
 <div id="swagger-ui-container1" class="swagger-ui-wrap"></div>
 </body>
