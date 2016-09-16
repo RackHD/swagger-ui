@@ -146,6 +146,12 @@
               swaggerUi.api.clientAuthorizations.remove('basicHeaderAuth');
               $('.footer').hide();
               $('.info').hide();
+              var info = window.monorailClient.ui.api.info,
+                  title = info.title,
+                  version = info.version;
+              $('#logo').html(title + (version && version.length > 2 ?
+                ('&nbsp;&nbsp;<span id="version">v' + version + '</span>') : ''));
+              $('#version').html();
             },
             onFailure: function(data) {
               log("Unable to Load Monorail SwaggerUI");
