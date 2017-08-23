@@ -32,6 +32,11 @@
 
   <script type="text/javascript">
     $(function () {
+      loginToMonorail().always(function(token) {
+          if(token.status === 404){
+              $('#auth').hide();
+          }
+      });
       function log() {
         if ('console' in window) {
           console.log.apply(console, arguments);
